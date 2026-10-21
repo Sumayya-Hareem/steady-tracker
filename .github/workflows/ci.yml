@@ -1,0 +1,50 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: npm run check
+      - name: Unit tests (default time zone)
+        run: npm test
+      - name: Unit tests (other time zones)
+        run: npm run test:tz
+
+  deploy:
+    # Requires Settings → Pages → Source: "GitHub Actions".
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the service worker with this commit
+        run: sed -i "s/__BUILD__/${GITHUB_SHA::8}/" sw.js
+      - name: Assemble the site (static files only)
+        run: |
+          mkdir _site
+          cp -r index.html sw.js manifest.webmanifest css src icons _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
