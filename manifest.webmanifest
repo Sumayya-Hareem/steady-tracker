@@ -1,16 +1,22 @@
 {
   "name": "Steady",
   "short_name": "Steady",
-  "description": "A calm daily habit, sleep, food and weight tracker. Your data stays on your phone.",
+  "description": "A calm daily habit, sleep, food and weight tracker. Your data stays on your device.",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f6f3ec",
-  "theme_color": "#2f6f5e",
+  "background_color": "#f8f5ef",
+  "theme_color": "#2c6e5c",
+  "categories": ["health", "lifestyle", "productivity"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Log a weigh-in", "short_name": "Weigh-in", "url": "./#/progress/log" },
+    { "name": "Today", "short_name": "Today", "url": "./#/today" }
   ]
 }

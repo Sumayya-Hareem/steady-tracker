@@ -1,9 +1,8 @@
-# Your personal data never belongs in the repo
-steady-backup*.json
-steady-daily-log*.csv
-steady-weigh-ins*.csv
-*.csv
-
-# Misc
-.DS_Store
 node_modules/
+.DS_Store
+# personal backups exported from the app — never commit these
+steady-backup-*.json
+steady-daily-log-*.csv
+steady-weigh-ins-*.csv
+# generated single-file build (run `npm run build`)
+dist/
