@@ -1,13 +1,20 @@
 // Data model, defaults, and `normalize()` — the single gate every piece of
 // stored or imported data passes through. It upgrades old versions (v1 had no
-// "habits" list) and strips anything that doesn't match the expected shape.
+// "habits" list; before v3 the evening walk was logged in minutes) and strips
+// anything that doesn't match the expected shape.
+//
+// Upgrades run once, gated on the data's version. The version comes from the
+// caller (the storage layer's persisted marker) or from the data itself; data
+// that is already v3 is never touched, so normalize() stays idempotent.
 
 import { isISODate } from './dates.js';
 import { toMinutes } from './sleep.js';
 
-export const SCHEMA_VERSION = 2;
-export const UNITS = ['min', 'reps', 'sec', 'glasses', 'times'];
+export const SCHEMA_VERSION = 3;
+export const UNITS = ['min', 'steps', 'reps', 'sec', 'glasses', 'times'];
 export const MEAL_KEYS = ['breakfast', 'lunch', 'dinner', 'snacks', 'drinks'];
+export const ACTIVITY_LEVELS = ['desk', 'light', 'active'];
+export const CUSTOM_FOOD_LIMIT = 200;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   name: '',
@@ -23,11 +30,17 @@ export const DEFAULT_SETTINGS = Object.freeze({
   onboarded: false,
   lastBackup: null,
   demo: false,
+  // for the rough calorie estimate (all optional; nothing is estimated until height and age are set)
+  heightCm: null,
+  age: null,
+  sex: 'f',
+  activity: 'desk',
+  customFoods: [], // foods you taught the app: [{ name, kcal per serving }]
 });
 
 // `id`s match the v1 app so existing day logs keep lining up after migration.
 export const DEFAULT_HABITS = Object.freeze([
-  { id: 'walk', label: 'Evening walk', unit: 'min', target: 30, hint: 'After dinner, easy pace', schedule: 'daily' },
+  { id: 'walk', label: 'Evening walk', unit: 'steps', target: 3000, hint: 'After dinner, easy pace', schedule: 'daily' },
   { id: 'squats', label: 'Squats', unit: 'reps', target: 20, hint: '2 rounds of 10', schedule: 'strength' },
   { id: 'pushups', label: 'Wall or knee push-ups', unit: 'reps', target: 16, hint: '2 rounds of 8–10', schedule: 'strength' },
   { id: 'bridges', label: 'Glute bridges', unit: 'reps', target: 20, hint: '2 rounds of 10', schedule: 'strength' },
@@ -47,7 +60,21 @@ export function defaultHabits() {
 }
 
 export function defaultSettings() {
-  return { ...DEFAULT_SETTINGS, strengthDays: [...DEFAULT_SETTINGS.strengthDays] };
+  return { ...DEFAULT_SETTINGS, strengthDays: [...DEFAULT_SETTINGS.strengthDays], customFoods: [] };
+}
+
+/** Foods the user taught the app. Names are lowercase, one entry per name, kcal per serving. */
+export function cleanCustomFoods(raw) {
+  if (!Array.isArray(raw)) return [];
+  const byName = new Map();
+  for (const item of raw) {
+    if (!isObj(item) || typeof item.name !== 'string') continue;
+    const name = item.name.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 40);
+    const kcal = Math.round(Number(item.kcal));
+    if (!name || !(kcal > 0 && kcal <= 5000)) continue;
+    byName.set(name, { name, kcal }); // last one wins
+  }
+  return [...byName.values()].slice(0, CUSTOM_FOOD_LIMIT);
 }
 
 const SETTING_RULES = {
@@ -67,6 +94,11 @@ const SETTING_RULES = {
   onboarded: (v) => (typeof v === 'boolean' ? v : undefined),
   lastBackup: (v) => (v === null || finite(v) ? v : undefined),
   demo: (v) => (typeof v === 'boolean' ? v : undefined),
+  heightCm: (v) => (v === null || (finite(v) && v >= 100 && v <= 230) ? v : undefined),
+  age: (v) => (v === null || (Number.isInteger(v) && v >= 12 && v <= 100) ? v : undefined),
+  sex: (v) => (v === 'f' || v === 'm' ? v : undefined),
+  activity: (v) => (ACTIVITY_LEVELS.includes(v) ? v : undefined),
+  customFoods: (v) => (Array.isArray(v) ? cleanCustomFoods(v) : undefined),
 };
 
 function cleanSettings(raw) {
@@ -98,22 +130,47 @@ export function cleanHabit(raw) {
   return habit;
 }
 
-function cleanHabits(raw, legacyWalkGoal) {
-  if (Array.isArray(raw)) {
-    const seen = new Set();
-    const list = [];
-    for (const item of raw) {
-      const h = cleanHabit(item);
-      if (h && !seen.has(h.id)) {
-        seen.add(h.id);
-        list.push(h);
-      }
+/** The valid habits in `raw`, or null when nothing usable was supplied. */
+function cleanHabitList(raw) {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set();
+  const list = [];
+  for (const item of raw) {
+    const h = cleanHabit(item);
+    if (h && !seen.has(h.id)) {
+      seen.add(h.id);
+      list.push(h);
     }
-    if (list.length) return list;
   }
-  const habits = defaultHabits();
-  if (finite(legacyWalkGoal) && legacyWalkGoal >= 1) habits[0].target = legacyWalkGoal; // v1 stored this in settings
-  return habits;
+  return list.length ? list : null;
+}
+
+/* ---- v3: the evening walk is logged in steps instead of minutes ---- */
+
+const STEPS_PER_MINUTE = 100; // an easy walk is roughly 100 steps a minute
+const looksLikeMinutes = (v) => finite(v) && v > 0 && v <= 300; // anything bigger is already steps: never convert it twice
+const minutesToSteps = (min) => Math.round((min * STEPS_PER_MINUTE) / 10) * 10;
+
+/**
+ * Converts old minute values to steps. Only converts what is really in minutes:
+ *  - a habit list we were given says which unit the walk used (only 'min' converts);
+ *  - no habit list at all means v1-style data, where the walk was always minutes.
+ */
+function walkMinutesToSteps(habits, days, legacyWalkGoal, habitsGiven) {
+  const walk = habits.find((h) => h.id === 'walk');
+  const wasMinutes = habitsGiven ? walk?.unit === 'min' : true;
+  if (!wasMinutes) return;
+  for (const day of Object.values(days)) {
+    const m = day.amounts?.walk;
+    if (looksLikeMinutes(m)) day.amounts.walk = minutesToSteps(m);
+  }
+  if (!walk) return;
+  if (habitsGiven) {
+    walk.unit = 'steps';
+    if (looksLikeMinutes(walk.target)) walk.target = minutesToSteps(walk.target);
+  } else if (looksLikeMinutes(legacyWalkGoal)) {
+    walk.target = minutesToSteps(legacyWalkGoal); // v1 kept the goal in settings
+  }
 }
 
 function cleanDay(raw) {
@@ -144,6 +201,7 @@ function cleanDay(raw) {
   }
   const note = str(raw.note, 5000);
   if (note) day.note = note;
+  if (finite(raw.kcal) && raw.kcal >= 0 && raw.kcal <= 20000) day.kcal = Math.round(raw.kcal); // own daily total
   if (raw.extraStrength === true) day.extraStrength = true;
   return day;
 }
@@ -163,9 +221,14 @@ function cleanWeights(raw) {
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
-/** Accepts anything (null, a v1 export, a v2 export, garbage) and returns clean v2 data. */
-export function normalize(raw) {
+/**
+ * Accepts anything (null, a v1/v2 export, garbage) and returns clean current data.
+ * `fromVersion` (the storage layer's persisted marker) wins over `raw.version`;
+ * with neither, the data is treated as v1.
+ */
+export function normalize(raw, { fromVersion } = {}) {
   const src = isObj(raw) ? raw : {};
+  const from = finite(fromVersion) ? fromVersion : finite(src.version) ? src.version : 1;
   const rawSettings = isObj(src.settings) ? src.settings : {};
   const days = {};
   if (isObj(src.days)) {
@@ -173,10 +236,13 @@ export function normalize(raw) {
       if (isISODate(date) && isObj(value)) days[date] = cleanDay(value);
     }
   }
+  const given = cleanHabitList(src.habits);
+  const habits = given ?? defaultHabits();
+  if (from < 3) walkMinutesToSteps(habits, days, rawSettings.walkGoal, given !== null);
   return {
     version: SCHEMA_VERSION,
     settings: cleanSettings(rawSettings),
-    habits: cleanHabits(src.habits, rawSettings.walkGoal),
+    habits,
     days,
     weights: cleanWeights(src.weights),
   };

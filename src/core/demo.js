@@ -2,7 +2,7 @@
 // Seeded, so the same seed always produces the same six weeks.
 
 import { addDays } from './dates.js';
-import { normalize } from './schema.js';
+import { normalize, SCHEMA_VERSION } from './schema.js';
 import { parseISO } from './dates.js';
 
 function mulberry32(seed) {
@@ -82,5 +82,5 @@ export function generateDemo(todayISO, { seed = 42, weeks = 6 } = {}) {
     weights.push({ date, kg: w === 0 ? 72.4 : kg, waist: Math.round((37 - 0.3 * w) * 10) / 10 });
   }
 
-  return normalize({ settings, habits: base.habits, days, weights });
+  return normalize({ version: SCHEMA_VERSION, settings, habits: base.habits, days, weights });
 }

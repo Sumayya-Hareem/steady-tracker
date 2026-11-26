@@ -5,11 +5,13 @@
 import { h, fill } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { ring } from '../ui/chart.js';
-import { toast, confirmDialog } from '../ui/dom.js';
+import { toast, confirmDialog, openSheet } from '../ui/dom.js';
 import { addDays, fmtDate, isISODate, parseISO, relativeLabel, toISO } from '../core/dates.js';
 import { applicableHabits, hasData, score, stepFor, streak } from '../core/habits.js';
 import { bedOnTime, formatDuration, formatTime12, sleepHours } from '../core/sleep.js';
 import { MEAL_KEYS } from '../core/schema.js';
+import { addCustomFood, estimateFood, itemLabel } from '../core/foods.js';
+import { dayCalories, isLowDay, profileReady } from '../core/calories.js';
 
 const MESSAGES = {
   empty: 'A fresh day. One small tick gets you moving.',
@@ -231,8 +233,31 @@ export function mountToday(ctx, arg) {
     snacks: ['Snacks / bakery', 'e.g. roasted chana, 1 biscuit'],
     drinks: ['Chai / drinks', 'e.g. 2 chai, 1 with half sugar'],
   };
+  /** Ask how many calories are in one serving of something Steady doesn't know, and remember it. */
+  function teach(name) {
+    const kcal = h('input', { type: 'number', id: 'tf_kcal', min: '1', max: '5000', step: '1', inputmode: 'numeric', placeholder: 'e.g. 350' });
+    const err = h('div', { class: 'err', role: 'alert' });
+    const form = h('form', { novalidate: true },
+      h('p', { class: 'muted small' }, `I don’t know “${name}” yet. How many calories are in one serving? I’ll remember it, and “2 ${name}” will count double.`),
+      h('div', { class: 'field' }, h('label', { for: 'tf_kcal' }, 'Calories in one serving'), kcal),
+      err,
+      h('button', { class: 'btn block', type: 'submit' }, 'Save'));
+    const sheet = openSheet({ title: 'Teach Steady a food', body: form });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = Math.round(Number(kcal.value));
+      if (kcal.value === '' || !(v > 0 && v <= 5000)) { err.textContent = 'Enter calories between 1 and 5000.'; return; }
+      store.updateSettings({ customFoods: addCustomFood(data().settings.customFoods, name, v) });
+      sheet.close();
+      toast('Saved. I’ll know it next time.');
+    });
+    setTimeout(() => kcal.focus(), 50);
+  }
+
   function foodCard() {
     const food = data().days[date]?.food ?? {};
+    let est = { meals: {} };
+    updaters.push(() => { est = estimateFood(data().days[date]?.food, data().settings.customFoods); });
     const fields = MEAL_KEYS.map((k) => {
       const input = h('input', { type: 'text', id: `f_${k}`, placeholder: FOOD[k][1], value: food[k] ?? '', autocomplete: 'off', maxlength: '300' });
       input.addEventListener('input', () => store.updateDay(date, (d) => {
@@ -244,11 +269,79 @@ export function mountToday(ctx, arg) {
         input.dispatchEvent(new Event('input'));
         toast('Nice. Logged.');
       } }, 'None today');
-      return h('div', { class: 'field' }, h('label', { for: `f_${k}` }, FOOD[k][0]),
-        none ? h('div', { style: { display: 'flex', gap: '8px' } }, input, none) : input);
+      const badge = h('span', { class: 'kcal-badge' });
+      const chips = h('div', { class: 'food-items' });
+      updaters.push(() => {
+        const r = est.meals[k];
+        badge.textContent = r && r.kcal > 0 ? `≈ ${r.kcal} kcal` : '';
+        fill(chips, r && r.items.map((it) => (it.unknown
+          ? h('button', { class: 'chip warm', type: 'button', 'aria-label': `Add calories for ${it.name}`, onclick: () => teach(it.name) }, `${it.name} · add kcal`)
+          : h('span', { class: 'chip neutral' }, `${itemLabel(it)} · ${it.kcal}`))));
+      });
+      return h('div', { class: 'field' },
+        h('div', { class: 'label-row' }, h('label', { for: `f_${k}` }, FOOD[k][0]), badge),
+        none ? h('div', { style: { display: 'flex', gap: '8px' } }, input, none) : input,
+        chips);
     });
     return h('section', { class: 'card' }, h('h2', null, icon('food'), 'What I ate'),
-      h('p', { class: 'sub' }, 'A few words each. Seeing it written down builds awareness without any counting.'), fields);
+      h('p', { class: 'sub' }, 'Type it the way you’d say it, like “2 roti, daal, chai half sugar”. Calories are estimated for you, roughly.'), fields);
+  }
+
+  /* ----- calories: eaten vs burned ----- */
+  const fmtK = (n) => Math.round(n).toLocaleString();
+  function calorieCard() {
+    const tile = (label) => {
+      const b = h('b');
+      const s = h('span', null, label);
+      return { el: h('div', { class: 'stat' }, b, s), b, s };
+    };
+    const eatenT = tile('Eaten');
+    const burnedT = tile('Burned');
+    const gapT = tile('Deficit');
+    const note = h('div', { class: 'small muted', style: { margin: '12px 0 0' }, 'aria-live': 'polite' });
+    const how = h('div', { class: 'small muted' });
+    const details = h('details', { style: { marginTop: '10px' } }, h('summary', { class: 'small' }, 'How “burned” is worked out'), how);
+    const manual = h('input', { type: 'number', id: 'k_manual', min: '0', max: '20000', step: '10', inputmode: 'numeric', placeholder: 'optional' });
+    manual.addEventListener('input', () => store.updateDay(date, (d) => {
+      const v = manual.value === '' ? null : Number(manual.value);
+      if (v == null || !(v >= 0 && v <= 20000)) delete d.kcal; else d.kcal = Math.round(v);
+    }));
+    updaters.push(() => {
+      const c = dayCalories(data(), date);
+      const e = c.eaten;
+      const b = c.burn;
+      eatenT.b.textContent = e ? fmtK(e.kcal) : '–';
+      burnedT.b.textContent = b ? fmtK(b.total) : '–';
+      gapT.b.textContent = c.deficit == null ? '–' : fmtK(Math.abs(c.deficit));
+      gapT.s.textContent = c.deficit != null && c.deficit < 0 ? 'Surplus' : 'Deficit';
+      if (document.activeElement !== manual) manual.value = Number.isFinite(data().days[date]?.kcal) ? String(data().days[date].kcal) : '';
+      details.hidden = !b;
+      if (b) {
+        fill(how,
+          h('div', null, `Resting energy and daily life: ${fmtK(b.base)} kcal`),
+          h('div', null, `Evening walk (${fmtK(b.steps)} steps): +${fmtK(b.walk)} kcal`),
+          b.strength > 0 && h('div', null, `Strength session: +${b.strength} kcal`),
+          h('div', null, `Based on ${b.kg} kg. Estimates are usually off by 15–30%.`));
+      }
+      const s = data().settings;
+      let msg = null;
+      if (!profileReady(s)) {
+        msg = [!e ? 'Type what you ate above. ' : '', 'Add your height and age in Settings to see what you burn and your deficit. ',
+          h('button', { class: 'link-btn', type: 'button', onclick: () => navigate('/settings') }, 'Open Settings')];
+      } else if (!b) msg = 'Log a weigh-in on the Progress tab so I can estimate what you burn.';
+      else if (!e) msg = 'Type what you ate above and I’ll count it.';
+      else if (e.unknown.length && !e.manual) {
+        msg = `Not counted yet: ${e.unknown.map((u) => u.name).join(', ')}. Tap the orange chip above to add its calories, or type your own total below.`;
+      } else if (!e.complete && !e.manual) msg = 'Only some meals are logged, so the deficit will shrink as you add the rest.';
+      else if (isLowDay(e)) msg = 'That’s quite low for a whole day. Eating too little backfires: tiredness, cravings, rebound eating. Steady wins.';
+      else if (isToday && c.deficit != null && !e.manual && now().getHours() < 20) msg = 'The day isn’t over, so this will shift as you eat.';
+      fill(note, msg);
+    });
+    return h('section', { class: 'card' }, h('h2', null, icon('flame'), 'Calories (rough estimate)'),
+      h('p', { class: 'sub' }, 'A guide, not a measurement. The weekly trend matters more than any one day.'),
+      h('div', { class: 'stats tight', style: { margin: '0' } }, eatenT.el, burnedT.el, gapT.el),
+      note, details,
+      h('div', { class: 'field', style: { margin: '14px 0 0' } }, h('label', { for: 'k_manual' }, 'Or type your own total for the day (kcal)'), manual));
   }
 
   function noteCard() {
@@ -262,10 +355,10 @@ export function mountToday(ctx, arg) {
     head, ...banners(), weekStrip(),
     h('div', { class: 'cols' },
       h('div', null, hero(), ...habitsCards()),
-      h('div', null, sleepCard(), foodCard(), noteCard())));
+      h('div', null, sleepCard(), foodCard(), calorieCard(), noteCard())));
   root.replaceChildren(view);
   const run = () => updaters.forEach((fn) => fn());
   run();
-  const unsub = store.subscribe('day', run);
+  const unsub = store.subscribe(['day', 'settings'], run);
   return () => unsub();
 }

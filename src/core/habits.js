@@ -51,10 +51,11 @@ export function hasData(day) {
   if (day.amounts && Object.keys(day.amounts).length) return true;
   if (day.sleep && (day.sleep.bed || day.sleep.wake)) return true;
   if (day.food && Object.values(day.food).some(Boolean)) return true;
+  if (Number.isFinite(day.kcal)) return true;
   return Boolean(day.note);
 }
 
-const STEPS = { min: 5, reps: 1, sec: 5, glasses: 1, times: 1 };
+const STEPS = { min: 5, steps: 500, reps: 1, sec: 5, glasses: 1, times: 1 };
 export const stepFor = (unit) => STEPS[unit] ?? 1;
 
 export function newHabitId() {

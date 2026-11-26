@@ -47,7 +47,24 @@ const GUIDE = [
   },
   {
     title: 'The evening walk',
-    body: [{ ul: ['Start 10–15 minutes after you finish eating.', 'Easy pace, where you could still chat.', 'Begin with 30 minutes and build up. Two shorter walks count too.', 'In winter, wear a shawl or jacket so the cold doesn’t cut it short.'] }],
+    body: [{ ul: [
+      'Start 10–15 minutes after you finish eating.',
+      'Easy pace, where you could still chat.',
+      'Log your steps from your phone’s step counter or a watch. About 3,000 steps is roughly 30 minutes at an easy pace. Build up from there; two shorter walks count too.',
+      'In winter, wear a shawl or jacket so the cold doesn’t cut it short.',
+    ] }],
+  },
+  {
+    title: 'Calories: how the estimate works',
+    body: [
+      { ul: [
+        '**Eaten:** type your food the way you’d say it, like “2 roti, daal, chai half sugar”. Steady looks each item up in a built-in list of everyday Pakistani and common foods, offline, and adds it up. Numbers, “half”, “ek/do/teen”, and units like katori, plate, glass, cup, handful or grams all work.',
+        '**Not recognised?** It isn’t counted. Tap the orange chip to teach it (calories for one serving), or type the calories yourself, like “restaurant biryani 650 kcal”. You can also type your own total for the whole day.',
+        '**Burned:** your resting energy (from height, age and weight) times your daily-life level, plus the walk from your steps and a little for strength days. Set height and age in Settings.',
+        '**Deficit** is burned minus eaten. About 7,700 kcal is 1 kg of body fat, so a 500 kcal deficit a day is roughly 0.5 kg a week.',
+      ] },
+      { note: 'These are estimates. Portions and bodies vary, so expect to be off by 20–30%. Trust the weekly trend and the scale over weeks, not one day. Never eat below your plan’s minimum just to make the number bigger.' },
+    ],
   },
   {
     title: 'Sleep',
