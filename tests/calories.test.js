@@ -74,9 +74,9 @@ test('eaten: your own total wins, otherwise the food text is estimated', () => {
 });
 
 test('a food it cannot read is reported and left out of the total', () => {
-  const e = eaten(make({ days: { [D]: { food: { breakfast: '2 roti', lunch: 'mystery thing', dinner: 'daal' } } } }), D);
+  const e = eaten(make({ days: { [D]: { food: { breakfast: '2 roti', lunch: 'mystery gloop', dinner: 'daal' } } } }), D);
   assert.equal(e.kcal, 360);
-  assert.deepEqual(e.unknown.map((u) => u.name), ['mystery thing']);
+  assert.deepEqual(e.unknown.map((u) => u.name), ['mystery gloop']);
 });
 
 test('deficit is burned minus eaten, and unknown while either side is missing', () => {

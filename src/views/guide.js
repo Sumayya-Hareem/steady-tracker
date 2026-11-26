@@ -59,6 +59,7 @@ const GUIDE = [
     body: [
       { ul: [
         '**Eaten:** type your food the way you’d say it, like “2 roti, daal, chai half sugar”. Steady looks each item up in a built-in list of everyday Pakistani and common foods, offline, and adds it up. Numbers, “half”, “ek/do/teen”, and units like katori, plate, glass, cup, handful or grams all work.',
+        '**Can’t measure it?** That’s fine. Say it roughly: “a little rice”, “thora salan”, “a few pieces of pumpkin”, “2-3 cubes”, “half roti”. A range like “2-3” counts as the middle. Or just tap any item under the box and pick “a little”, “half”, “double”… Items with a dashed outline are ones where you didn’t say how much, so Steady guessed one usual amount.',
         '**Not recognised?** It isn’t counted. Tap the orange chip to teach it (calories for one serving), or type the calories yourself, like “restaurant biryani 650 kcal”. You can also type your own total for the whole day.',
         '**Burned:** your resting energy (from height, age and weight) times your daily-life level, plus the walk from your steps and a little for strength days. Set height and age in Settings.',
         '**Deficit** is burned minus eaten. About 7,700 kcal is 1 kg of body fat, so a 500 kcal deficit a day is roughly 0.5 kg a week.',
