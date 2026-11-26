@@ -113,6 +113,7 @@ export const FOODS = [
   f('green beans', 'Green beans', 'green beans|green bean|french beans|french bean|string beans|fansi|beans', 'serving', 80, 45, { cutG: 8, kind: 'veg' }),
   f('capsicum', 'Capsicum', 'capsicum|capsicums|shimla mirch|bell pepper|bell peppers', 'serving', 80, 40, { cutG: 20, kind: 'veg' }),
   f('mushroom', 'Mushroom', 'mushroom|mushrooms|khumb', 'serving', 80, 45, { cutG: 15, kind: 'veg' }),
+  f('scallion', 'Spring onion / scallion', 'spring onion|spring onions|scallion|scallions|green onion|green onions|hara pyaz|hari pyaz|hare pyaz', 'serving', 80, 45, { cutG: 15, kind: 'veg' }),
   f('beetroot', 'Beetroot', 'beetroot|beetroots|chukandar|beets|beet', 'serving', 80, 50, { cutG: 25, kind: 'veg' }),
   f('corn', 'Corn on the cob', 'corn|bhutta|makai|sweet corn|corn cob|boiled corn|roasted corn|bhutta roasted|makka', 'piece', 150, 130),
   f('makai roti', 'Makai / bajra roti', 'makai ki roti|makki ki roti|makai roti|makki roti|corn roti|bajra roti|bajre ki roti|jowar roti|jawar roti|bajra', 'piece', 60, 140),

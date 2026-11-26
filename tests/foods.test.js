@@ -250,7 +250,7 @@ test('roasted chicken is dry-cooked chicken, and a tiny amount stays tiny', () =
 });
 
 test('side vegetables are known foods now, not unknown words', () => {
-  for (const w of ['asparagus', 'green beans', 'broccoli', 'zucchini', 'capsicum', 'mushroom', 'beetroot', 'pumpkin', 'kaddu']) {
+  for (const w of ['asparagus', 'green beans', 'broccoli', 'zucchini', 'capsicum', 'mushroom', 'beetroot', 'pumpkin', 'kaddu', 'scallions', 'spring onion', 'hara pyaz']) {
     const r = parseMeal(w);
     assert.equal(r.unknown.length, 0, w);
     assert.ok(r.kcal > 0 && r.kcal <= 60, `${w}: ${r.kcal}`);
