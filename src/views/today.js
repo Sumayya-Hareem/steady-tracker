@@ -10,7 +10,7 @@ import { addDays, fmtDate, isISODate, parseISO, relativeLabel, toISO } from '../
 import { applicableHabits, hasData, score, stepFor, streak } from '../core/habits.js';
 import { bedOnTime, formatDuration, formatTime12, sleepHours } from '../core/sleep.js';
 import { MEAL_KEYS } from '../core/schema.js';
-import { addCustomFood, estimateFood, itemLabel } from '../core/foods.js';
+import { AMOUNT_CHOICES, addCustomFood, dropItem, estimateFood, itemLabel, readsBack, rewriteItem, rewriteItemKcal } from '../core/foods.js';
 import { dayCalories, isLowDay, profileReady } from '../core/calories.js';
 
 const MESSAGES = {
@@ -254,6 +254,55 @@ export function mountToday(ctx, arg) {
     setTimeout(() => kcal.focus(), 50);
   }
 
+  /**
+   * "How much was it?" for one item, without needing grams. Picking an amount rewrites just that item in what
+   * you typed ("a little roasted chicken", "30g pumpkin"), so the text stays the single source of truth.
+   */
+  function adjust(input, it, all) {
+    let sheet;
+    const apply = (text, message) => {
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+      sheet.close();
+      if (message) toast(message);
+    };
+    // write a change back only if the text still reads as the same meal; otherwise say so instead of guessing
+    const change = (candidates) => {
+      const next = readsBack(input.value, candidates, { custom: data().settings.customFoods });
+      if (next == null) { toast('I couldn’t change that one. Try typing it in the box.'); return; }
+      apply(next);
+    };
+    const number = (id, label, placeholder) => h('input', { type: 'number', id, min: '1', max: '5000', step: '1', inputmode: 'numeric', placeholder, 'aria-label': label });
+    const exact = (id, label, unitWord, onValue) => {
+      const field = number(id, label, unitWord === 'kcal' ? 'e.g. 60' : 'e.g. 40');
+      const err = h('div', { class: 'err', role: 'alert' });
+      const form = h('form', { class: 'exact', novalidate: true },
+        h('div', { class: 'field' }, h('label', { for: id }, label), field, err),
+        h('button', { class: 'btn ghost sm', type: 'submit' }, 'Use'));
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const v = Math.round(Number(field.value));
+        if (field.value === '' || !(v > 0 && v <= 5000)) { err.textContent = 'Enter a number between 1 and 5000.'; return; }
+        onValue(v);
+      });
+      return form;
+    };
+    const unitWord = it.per?.includes(' ml') ? 'ml' : 'g';
+    const body = [
+      h('p', { class: 'sheet-item' }, h('strong', null, itemLabel(it)), ` · counted as ${it.kcal} kcal`),
+      h('p', { class: 'muted small' }, it.rough
+        ? `You didn’t say how much, so I counted one usual amount (${it.per}). Pick what’s closest. It doesn’t need to be exact.`
+        : 'Pick what’s closest. It doesn’t need to be exact.'),
+      h('div', { class: 'choices' }, AMOUNT_CHOICES.map((c) => h('button', { class: 'btn ghost choice', type: 'button', onclick: () => change(c.say.map((s) => rewriteItem(input.value, it, s))) },
+        h('span', null, c.label),
+        it.usual != null && h('small', null, `≈ ${Math.round(it.usual * c.factor)} kcal`)))),
+      it.per?.includes('about') && exact('adj_g', `Or the exact ${unitWord === 'ml' ? 'millilitres' : 'grams'}`, unitWord, (v) => change([rewriteItem(input.value, it, `${v}${unitWord}`)])),
+      exact('adj_k', 'Or the exact calories', 'kcal', (v) => change([rewriteItemKcal(input.value, it, v)])),
+      h('button', { class: 'btn danger block', type: 'button', onclick: () => apply(dropItem(input.value, it, all), 'Taken out of the count.') }, 'Don’t count this'),
+    ];
+    sheet = openSheet({ title: 'How much was it?', body });
+  }
+
   function foodCard() {
     const food = data().days[date]?.food ?? {};
     let est = { meals: {} };
@@ -276,7 +325,9 @@ export function mountToday(ctx, arg) {
         badge.textContent = r && r.kcal > 0 ? `≈ ${r.kcal} kcal` : '';
         fill(chips, r && r.items.map((it) => (it.unknown
           ? h('button', { class: 'chip warm', type: 'button', 'aria-label': `Add calories for ${it.name}`, onclick: () => teach(it.name) }, `${it.name} · add kcal`)
-          : h('span', { class: 'chip neutral' }, `${itemLabel(it)} · ${it.kcal}`))));
+          : it.span && it.nameSpan
+            ? h('button', { class: ['chip', 'neutral', it.rough && 'rough'], type: 'button', 'aria-label': `${itemLabel(it)}, about ${it.kcal} calories${it.rough ? ', amount not given' : ''}. Tap to change how much.`, onclick: () => adjust(input, it, r.items) }, `${itemLabel(it)} · ${it.rough ? '~' : ''}${it.kcal}`)
+            : h('span', { class: 'chip neutral' }, `${itemLabel(it)} · ${it.kcal}`))));
       });
       return h('div', { class: 'field' },
         h('div', { class: 'label-row' }, h('label', { for: `f_${k}` }, FOOD[k][0]), badge),
@@ -284,7 +335,7 @@ export function mountToday(ctx, arg) {
         chips);
     });
     return h('section', { class: 'card' }, h('h2', null, icon('food'), 'What I ate'),
-      h('p', { class: 'sub' }, 'Type it the way you’d say it, like “2 roti, daal, chai half sugar”. Calories are estimated for you, roughly.'), fields);
+      h('p', { class: 'sub' }, 'Type it the way you’d say it, like “2 roti, daal, chai half sugar”. Calories are estimated for you, roughly. Not sure how much? Say “a little”, “half”, “a few pieces” or “2-3 cubes”, or tap an item to change it.'), fields);
   }
 
   /* ----- calories: eaten vs burned ----- */

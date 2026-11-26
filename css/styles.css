@@ -301,7 +301,16 @@ details[open] summary::after { transform: rotate(45deg); }
 .food-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .food-items:empty { display: none; }
 .food-items .chip { font-size: 0.75rem; padding: 2px 9px; font-weight: 650; border: 0; }
-.food-items button.chip { cursor: pointer; }
+.food-items button.chip { cursor: pointer; min-height: 32px; font-family: inherit; }
+.food-items .chip.rough { border: 1.5px dashed color-mix(in srgb, var(--muted) 55%, transparent); padding: 1px 8px; }
+.sheet-item { margin: 0 0 6px; }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 16px; }
+.choice { flex-direction: column; align-items: flex-start; gap: 0; width: 100%; min-height: 56px; padding: 8px 14px; text-align: left; line-height: 1.25; }
+.choice small { font-weight: 600; color: var(--muted); }
+.exact { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 8px; }
+.exact .field { flex: 1; margin: 0; }
+.exact .btn { margin-top: 26px; flex: none; }
+.sheet-body > .btn.block { margin-top: 10px; }
 .stats.tight { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .stats.tight .stat { padding: 12px 10px; }
 .stats.tight .stat b { font-size: 1.35rem; }

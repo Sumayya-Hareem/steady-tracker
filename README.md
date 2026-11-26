@@ -18,7 +18,7 @@ Designed around behavioural consistency, and around everyday South Asian home co
 - **Interactive weight chart.** Scrub with touch, mouse or arrow keys; target-pace line, checkpoint marker, range filter, and a regression-based weekly trend.
 - **Defensive data handling.** Every load and import passes through a single `normalize()` that validates and upgrades data (v1 → v2 → v3); CSV export neutralises spreadsheet-formula injection; the UI is built with a DOM helper instead of HTML strings, so user text can't become markup.
 - **Accessible.** Native `<dialog>` sheets, keyboard-operable controls, ARIA roles/labels, visible focus, `prefers-reduced-motion`, light/dark/auto theme.
-- **Tested.** 106 unit tests on the logic that matters (cross-midnight sleep maths, DST-safe date arithmetic, streaks over gaps, pace interpolation and regression, CSV escaping, schema migration, the food parser, calorie maths, store write batching), run in three time zones in CI.
+- **Tested.** 126 unit tests on the logic that matters (cross-midnight sleep maths, DST-safe date arithmetic, streaks over gaps, pace interpolation and regression, CSV escaping, schema migration, the food parser, calorie maths, store write batching), run in three time zones in CI.
 
 ## Architecture
 
@@ -76,6 +76,7 @@ Safety: the converted data and a version marker are written in a single transact
 ## Calorie estimate: what it is and isn't
 
 - **Eaten** comes from the food you type (or a total you type yourself). Built-in values are ballpark home portions, good to roughly ±20–30%.
+- **When you can't measure it:** say it roughly ("a little rice", "thora salan", "a few pieces of pumpkin", "2-3 cubes each", "half roti"); a range counts as its middle. Vegetables use small side-portion sizes (a cut piece is about 20 g), not curry-bowl sizes. Anything typed without an amount is counted as one usual serving and drawn with a dashed outline; tap any item to pick "a little / half / the usual / more / double", exact grams or calories, or "don't count this". That rewrites just that item in the text, and only when the text still reads back as the same meal.
 - **Burned** = resting energy (Mifflin-St Jeor from height, age, weight) × a daily-life factor (1.2 / 1.35 / 1.5) + steps × weight × 0.0004 + 40 kcal on a strength day.
 - **Deficit** = burned − eaten; about 7,700 kcal ≈ 1 kg of fat. Weekly numbers use only days with at least three meals logged (or a typed total).
 - A fully logged day under 1,400 kcal gets a gentle nudge to eat more.
