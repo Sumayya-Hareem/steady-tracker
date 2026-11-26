@@ -7,7 +7,9 @@ import { toISO } from '../core/dates.js';
 import { UNITS, normalize, isBackupShape } from '../core/schema.js';
 import { newHabitId } from '../core/habits.js';
 import { daysCSV, weightsCSV } from '../core/csv.js';
-import { discardLegacy } from '../storage.js';
+import { discardLegacy, PRE_V3_KEY } from '../storage.js';
+import { ACTIVITY } from '../core/calories.js';
+import { addCustomFood, removeCustomFood } from '../core/foods.js';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const THEME_KEY = 'steady.theme';
@@ -90,6 +92,56 @@ export function mountSettings(ctx) {
       h('div', { class: 'field' }, h('label', { for: 'st_wu' }, 'Waist unit'), unit)));
   }
 
+  function caloriesCard() {
+    const s = data().settings;
+    const sex = h('select', { id: 'st_sex' }, h('option', { value: 'f', selected: s.sex === 'f' }, 'Female'), h('option', { value: 'm', selected: s.sex === 'm' }, 'Male'));
+    sex.addEventListener('change', () => store.updateSettings({ sex: sex.value }));
+    const act = h('select', { id: 'st_act' }, Object.entries(ACTIVITY).map(([k, v]) => h('option', { value: k, selected: s.activity === k }, v.label)));
+    act.addEventListener('change', () => store.updateSettings({ activity: act.value }));
+    return h('section', { class: 'card' }, h('h2', null, icon('flame'), 'For calorie estimates'),
+      h('p', { class: 'sub' }, 'Used only to estimate what you burn each day. It stays on this device. Leave blank to skip the burn side.'),
+      h('div', { class: 'grid2' },
+        numberField('st_h', 'Height (cm)', s.heightCm, (v) => store.updateSettings({ heightCm: v != null && v >= 100 && v <= 230 ? v : null }), { step: '1', min: '100', max: '230' }),
+        numberField('st_age', 'Age', s.age, (v) => store.updateSettings({ age: v != null && Number.isInteger(v) && v >= 12 && v <= 100 ? v : null }), { step: '1', min: '12', max: '100' })),
+      h('div', { class: 'grid2' },
+        h('div', { class: 'field' }, h('label', { for: 'st_sex' }, 'Sex (for the formula)'), sex),
+        h('div', { class: 'field' }, h('label', { for: 'st_act' }, 'Daily life'), act)));
+  }
+
+  function foodsCard() {
+    const list = data().settings.customFoods;
+    const name = h('input', { type: 'text', id: 'cf_name', maxlength: '40', placeholder: 'e.g. granola', autocomplete: 'off' });
+    const kcal = h('input', { type: 'number', id: 'cf_kcal', min: '1', max: '5000', step: '1', inputmode: 'numeric', placeholder: 'per serving' });
+    const err = h('div', { class: 'err', role: 'alert' });
+    const form = h('form', { novalidate: true },
+      h('div', { class: 'grid2' },
+        h('div', { class: 'field' }, h('label', { for: 'cf_name' }, 'Food'), name),
+        h('div', { class: 'field' }, h('label', { for: 'cf_kcal' }, 'Calories (1 serving)'), kcal)),
+      err,
+      h('button', { class: 'btn ghost sm', type: 'submit' }, icon('plus', 18), 'Add food'));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const n = name.value.trim();
+      const v = Math.round(Number(kcal.value));
+      if (!n) { err.textContent = 'Give the food a name.'; return; }
+      if (kcal.value === '' || !(v > 0 && v <= 5000)) { err.textContent = 'Calories should be between 1 and 5000.'; return; }
+      store.updateSettings({ customFoods: addCustomFood(data().settings.customFoods, n, v) });
+      toast('Food saved.');
+      repaintFoods();
+    });
+    const row = (c) => h('div', { class: 'habit-admin' },
+      h('div', { class: 'grow' }, h('div', { class: 't' }, c.name), h('div', { class: 'd' }, `${c.kcal} kcal per serving`)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': `Remove ${c.name}`, onclick: () => {
+        store.updateSettings({ customFoods: removeCustomFood(data().settings.customFoods, c.name) });
+        toast('Removed.');
+        repaintFoods();
+      } }, icon('trash', 18)));
+    return h('section', { class: 'card' }, h('h2', null, icon('food'), 'My foods'),
+      h('p', { class: 'sub' }, 'Foods you taught Steady. “2 granola” counts double. A food with the same name as a built-in one replaces it.'),
+      list.length ? h('div', null, list.map(row)) : h('p', { class: 'muted small' }, 'Nothing yet. When you type something Steady doesn’t know, tap its orange chip to add it.'),
+      h('div', { style: { marginTop: '12px' } }, form));
+  }
+
   function routineCard() {
     const s = data().settings;
     const chips = DAYS.map((name, i) => {
@@ -164,6 +216,19 @@ export function mountSettings(ctx) {
       };
       reader.readAsText(f);
     });
+    // After the steps update, offer the copy of your data kept from just before it.
+    const preCopy = h('div', { class: 'btn-stack' });
+    Promise.resolve(adapter.meta.get(PRE_V3_KEY)).then((b) => {
+      if (!b?.data) return;
+      const when = new Date(b.savedAt);
+      preCopy.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => {
+        const d = b.data;
+        const copy = { app: 'steady', version: 2, exportedAt: when.toISOString(), settings: d.settings ?? {}, habits: d.habits, days: d.days ?? {}, weights: d.weights ?? [] };
+        download(`steady-before-steps-update-${toISO(when)}.json`, JSON.stringify(copy, null, 2), 'application/json');
+        toast('Downloaded your data from before the update.');
+      } }, icon('download', 18), 'Download pre-update copy'),
+      h('p', { class: 'small muted', style: { margin: 0 } }, 'Kept automatically just before the walk switched from minutes to steps.'));
+    }).catch(() => {});
     return h('section', { class: 'card' }, h('h2', null, icon('shield'), 'Your data'),
       h('p', { class: 'sub' }, `Everything is stored only in this browser on this device (${adapter.kind === 'indexeddb' ? 'IndexedDB' : 'local storage'}). Nothing is uploaded. Export a backup now and then, especially before clearing browser data.`),
       h('div', { class: 'btn-stack' },
@@ -176,7 +241,8 @@ export function mountSettings(ctx) {
         h('button', { class: 'btn ghost', type: 'button', onclick: () => { download(`steady-daily-log-${todayISO}.csv`, daysCSV(data()), 'text/csv'); toast('Daily log downloaded.'); } }, 'Export daily log (CSV)'),
         h('button', { class: 'btn ghost', type: 'button', onclick: () => { download(`steady-weigh-ins-${todayISO}.csv`, weightsCSV(data()), 'text/csv'); toast('Weigh-ins downloaded.'); } }, 'Export weigh-ins (CSV)'),
         h('label', { class: 'btn ghost', for: 'importFile' }, icon('upload', 18), 'Restore from backup…'),
-        file),
+        file,
+        preCopy),
       h('p', { class: 'small muted', style: { margin: '12px 0 0' } }, `Last backup: ${s.lastBackup ? new Date(s.lastBackup).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'never'}`));
   }
 
@@ -212,11 +278,14 @@ export function mountSettings(ctx) {
   const habitsHost = h('div');
   const repaintHabits = () => habitsHost.replaceChildren(habitsCard());
   repaintHabits();
+  const foodsHost = h('div');
+  const repaintFoods = () => foodsHost.replaceChildren(foodsCard());
+  repaintFoods();
   host.append(
     h('header', { class: 'page-head' }, h('div', { class: 'eyebrow' }, 'Make it yours'), h('h1', null, 'Settings')),
     h('div', { class: 'cols' },
-      h('div', null, profileCard(), routineCard(), habitsHost),
-      h('div', null, appearanceCard(), dataCard(), installCard(), dangerCard())));
+      h('div', null, profileCard(), caloriesCard(), routineCard(), habitsHost),
+      h('div', null, foodsHost, appearanceCard(), dataCard(), installCard(), dangerCard())));
   const unsub = store.subscribe('habits', repaintHabits);
   return () => unsub();
 }

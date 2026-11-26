@@ -230,8 +230,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .stepper button { width: 36px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: var(--ink); }
 .stepper button:hover { background: var(--surface); }
 .stepper .icon { width: 18px; height: 18px; }
-.stepper .val { display: flex; flex-direction: column; align-items: center; width: 52px; }
-.stepper input { width: 52px; min-height: 26px; padding: 0; text-align: center; border: 0; background: transparent; font-weight: 700; font-size: 16px; border-radius: 6px; }
+.stepper .val { display: flex; flex-direction: column; align-items: center; width: 66px; }
+.stepper input { width: 66px; min-height: 26px; padding: 0; text-align: center; border: 0; background: transparent; font-weight: 700; font-size: 16px; border-radius: 6px; }
 .stepper input:focus { box-shadow: none; background: var(--surface); }
 .stepper .unit { margin-top: -4px; font-size: 0.64rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .group-title { margin: 16px 0 2px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
@@ -293,6 +293,19 @@ details[open] summary::after { transform: rotate(45deg); }
 .habit-admin .t { font-weight: 600; line-height: 1.3; }
 .habit-admin .d { font-size: 0.8rem; color: var(--muted); }
 .habit-admin .icon-btn { width: 38px; height: 40px; }
+
+/* food estimates and calories */
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.label-row label { margin-bottom: 6px; }
+.kcal-badge { font-size: 0.8rem; font-weight: 700; color: var(--accent-strong); }
+.food-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.food-items:empty { display: none; }
+.food-items .chip { font-size: 0.75rem; padding: 2px 9px; font-weight: 650; border: 0; }
+.food-items button.chip { cursor: pointer; }
+.stats.tight { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stats.tight .stat { padding: 12px 10px; }
+.stats.tight .stat b { font-size: 1.35rem; }
+details summary.small { cursor: pointer; color: var(--muted); }
 
 /* onboarding */
 .onboard { position: fixed; inset: 0; z-index: 50; overflow: auto; background: var(--bg); padding: calc(28px + env(safe-area-inset-top)) 20px 40px; }

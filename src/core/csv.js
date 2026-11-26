@@ -5,6 +5,7 @@
 import { score, hasData } from './habits.js';
 import { sleepHours } from './sleep.js';
 import { MEAL_KEYS } from './schema.js';
+import { dayCalories } from './calories.js';
 
 export function csvCell(value) {
   if (value == null) return '';
@@ -22,7 +23,7 @@ export function daysCSV(data) {
     head.push(h.label);
     if (h.unit) head.push(`${h.label} (${h.unit})`);
   }
-  head.push('bedtime', 'wake_time', 'sleep_hours', ...MEAL_KEYS, 'note');
+  head.push('bedtime', 'wake_time', 'sleep_hours', ...MEAL_KEYS, 'kcal_eaten_est', 'kcal_burned_est', 'note');
 
   const rows = [head];
   for (const date of Object.keys(data.days).sort()) {
@@ -37,6 +38,8 @@ export function daysCSV(data) {
     const hrs = sleepHours(day.sleep?.bed, day.sleep?.wake);
     row.push(day.sleep?.bed, day.sleep?.wake, hrs != null ? hrs.toFixed(2) : '');
     for (const k of MEAL_KEYS) row.push(day.food?.[k]);
+    const c = dayCalories(data, date);
+    row.push(c.eaten?.kcal, c.burn?.total);
     row.push(day.note);
     rows.push(row);
   }

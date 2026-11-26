@@ -25,7 +25,7 @@ applyTheme(savedTheme());
 async function boot() {
   const adapter = await openAdapter();
   const store = createStore(adapter, { onError: () => toast('Could not save. Storage may be full or blocked in this browser.') });
-  const { data, migrated } = await loadWithMigration(adapter);
+  const { data, migrated, upgraded } = await loadWithMigration(adapter);
   store.init(data);
   navigator.storage?.persist?.().catch(() => {}); // ask the browser not to evict our data
 
@@ -86,6 +86,7 @@ async function boot() {
 
   route();
   if (migrated) toast('Welcome back. Your earlier data was carried over.');
+  else if (upgraded) toast('Your evening walk is now counted in steps. Past minutes were converted (about 100 steps a minute).');
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

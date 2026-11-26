@@ -30,6 +30,8 @@ const ASSETS = [
   './src/core/scale.js',
   './src/core/csv.js',
   './src/core/demo.js',
+  './src/core/foods.js',
+  './src/core/calories.js',
   './src/ui/dom.js',
   './src/ui/icons.js',
   './src/ui/chart.js',

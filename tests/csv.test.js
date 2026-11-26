@@ -35,10 +35,11 @@ test('toCSV joins rows', () => {
 
 test('daysCSV has a column per habit and sanitises free text', () => {
   const data = normalize({
+    version: 3,
     days: {
       '2026-10-20': {
         checks: { walk: true },
-        amounts: { walk: 35 },
+        amounts: { walk: 3500 },
         sleep: { bed: '23:00', wake: '07:00' },
         food: { dinner: '=HYPERLINK("x")' },
         note: 'good, tired',
@@ -48,9 +49,9 @@ test('daysCSV has a column per habit and sanitises free text', () => {
   });
   const lines = daysCSV(data).trim().split('\n');
   assert.equal(lines.length, 2);
-  assert.ok(lines[0].includes('Evening walk (min)'));
+  assert.ok(lines[0].includes('Evening walk (steps)'));
   assert.ok(lines[0].includes('Squats (reps)'));
-  assert.ok(lines[1].startsWith('2026-10-20,1,5,1,35,'));
+  assert.ok(lines[1].startsWith('2026-10-20,1,5,1,3500,'));
   assert.ok(lines[1].includes('8.00'));
   assert.ok(lines[1].includes(`"'=HYPERLINK(""x"")"`));
   assert.ok(lines[1].endsWith('"good, tired"'));

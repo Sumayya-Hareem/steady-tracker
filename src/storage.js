@@ -8,9 +8,10 @@
 // localStorage is a fallback for browsers that block IndexedDB; the in-memory
 // adapter backs the unit tests.
 
-import { normalize } from './core/schema.js';
+import { normalize, SCHEMA_VERSION } from './core/schema.js';
 
 export const LEGACY_KEY = 'steady.v1'; // where v1 of the app kept everything
+export const PRE_V3_KEY = 'backup:pre-v3'; // a copy of your data from just before the steps update
 const FALLBACK_KEY = 'steady.v2';
 
 /* ---------- IndexedDB ---------- */
@@ -85,6 +86,7 @@ export function createIdbAdapter(db) {
         tx.objectStore('weights').clear();
         putMeta(tx, 'settings', data.settings);
         putMeta(tx, 'habits', data.habits);
+        putMeta(tx, 'schemaVersion', data.version ?? SCHEMA_VERSION); // same transaction: data and marker can't disagree
         for (const [date, day] of Object.entries(data.days)) tx.objectStore('days').put({ ...day, date });
         for (const w of data.weights) tx.objectStore('weights').put(w);
       }),
@@ -131,7 +133,7 @@ export function createMemoryAdapter(initial = null) {
       const d = ensure();
       d.weights = d.weights.filter((x) => x.date !== date);
     },
-    async replaceAll(next) { adapter.calls.push('replaceAll'); data = structuredClone(next); },
+    async replaceAll(next) { adapter.calls.push('replaceAll'); data = structuredClone(next); metaStore.set('schemaVersion', next.version ?? SCHEMA_VERSION); },
     async clear() { adapter.calls.push('clear'); data = null; },
     meta: {
       async get(key) { return metaStore.get(key); },
@@ -157,7 +159,7 @@ export function createLocalAdapter(storage) {
     async deleteDay(date) { delete ensure().days[date]; write(); },
     async putWeight(w) { const d = ensure(); d.weights = d.weights.filter((x) => x.date !== w.date).concat(w); write(); },
     async deleteWeight(date) { const d = ensure(); d.weights = d.weights.filter((x) => x.date !== date); write(); },
-    async replaceAll(next) { data = { ...structuredClone(next), meta: data?.meta ?? {} }; write(); },
+    async replaceAll(next) { data = { ...structuredClone(next), meta: { ...(data?.meta ?? {}), schemaVersion: next.version ?? SCHEMA_VERSION } }; write(); },
     async clear() { data = { settings: undefined, habits: undefined, days: {}, weights: [], meta: data?.meta ?? {} }; write(); },
     meta: {
       async get(key) { return ensure().meta?.[key]; },
@@ -189,23 +191,40 @@ export function readLegacy(storage = globalThis.localStorage) {
 }
 
 /**
- * Load saved data. On the very first run after upgrading, pull in the v1
- * localStorage blob once. The old blob is left in place as a safety copy.
- * Returns { data, migrated }.
+ * Load saved data, upgrading it once if it needs it. Returns { data, migrated, upgraded }.
+ *
+ * - Data saved before schema v3 (walk logged in minutes): a copy is kept under
+ *   PRE_V3_KEY, the data is converted, and everything is written back in ONE
+ *   transaction together with the version marker. If either write fails this
+ *   throws and the original data is left exactly as it was.
+ * - A brand-new install is just stamped with the current version, so nothing is
+ *   ever converted later.
+ * - On the very first run after moving from v1, the old localStorage blob is
+ *   imported once and left in place as a safety copy.
  */
 export async function loadWithMigration(adapter, legacyStorage = globalThis.localStorage) {
   const saved = await adapter.load();
-  if (saved) return { data: normalize(saved), migrated: false };
+  if (saved) {
+    const marker = await adapter.meta.get('schemaVersion');
+    const known = typeof marker === 'number';
+    const data = normalize(saved, { fromVersion: known ? marker : undefined });
+    if (known && marker >= SCHEMA_VERSION) return { data, migrated: false, upgraded: false };
+    const { meta: _meta, ...copy } = saved; // (the localStorage adapter hands back its meta too)
+    await adapter.meta.set(PRE_V3_KEY, { savedAt: Date.now(), data: copy });
+    await adapter.replaceAll(data);
+    return { data, migrated: false, upgraded: true };
+  }
   if (!(await adapter.meta.get('legacyImported'))) {
     const legacy = readLegacy(legacyStorage);
     if (legacy) {
-      const data = normalize(legacy);
+      const data = normalize(legacy, { fromVersion: 1 });
       await adapter.replaceAll(data);
       await adapter.meta.set('legacyImported', true);
-      return { data, migrated: true };
+      return { data, migrated: true, upgraded: false };
     }
   }
-  return { data: normalize(null), migrated: false };
+  await adapter.meta.set('schemaVersion', SCHEMA_VERSION); // fresh install: nothing old to convert
+  return { data: normalize(null), migrated: false, upgraded: false };
 }
 
 /** Mark legacy data as handled (used by "erase everything" so it can't come back). */

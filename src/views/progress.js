@@ -8,6 +8,7 @@ import { fmtDate, toISO, isISODate } from '../core/dates.js';
 import { checkpointStatus, defaultCheckpointDate, round1, weeklyRate } from '../core/pace.js';
 import { hasData, score, weekStats } from '../core/habits.js';
 import { formatDuration, sleepHours } from '../core/sleep.js';
+import { eaten, weekCalories } from '../core/calories.js';
 
 const CHECKPOINT_NOTES = {
   reached: 'You reached your checkpoint. Brilliant.',
@@ -142,6 +143,29 @@ export function mountProgress(ctx, arg) {
       weekBars(w.days, { letter: (d) => fmtDate(d, { weekday: 'narrow' }) }));
   }
 
+  function calorieCard() {
+    const w = weekCalories(data(), todayISO);
+    if (w.days.every((d) => d.eaten == null)) return null;
+    const fmt = (n) => Math.round(n).toLocaleString();
+    const tile = (value, label) => h('div', { class: 'stat' }, h('b', null, value), h('span', null, label));
+    let body;
+    if (w.missingProfile) {
+      body = h('p', { class: 'small muted', style: { margin: 0 } }, 'Add your height and age in Settings to compare what you eat with what you burn. ',
+        h('button', { class: 'link-btn', type: 'button', onclick: () => navigate('/settings') }, 'Open Settings'));
+    } else if (!w.counted) {
+      body = h('p', { class: 'small muted', style: { margin: 0 } }, 'Log at least three meals on a day (or type your own total) and it will show up here. Half-logged days are left out so they don’t skew the picture.');
+    } else {
+      const gain = w.avgDeficit < 0;
+      body = [
+        h('div', { class: 'stats tight', style: { margin: '0 0 10px' } },
+          tile(fmt(w.avgEaten), 'Eaten / day'), tile(fmt(w.avgBurned), 'Burned / day'), tile(fmt(Math.abs(w.avgDeficit)), gain ? 'Surplus / day' : 'Deficit / day')),
+        h('p', { class: 'small muted', style: { margin: 0 } },
+          `Across ${w.counted} fully logged day${w.counted === 1 ? '' : 's'}: about ${Math.abs(w.kgFat)} kg of fat ${gain ? 'gained' : 'lost'} if the estimates are right. They are rough, so trust the scale over weeks, not this number.`),
+      ];
+    }
+    return h('section', { class: 'card' }, h('h2', null, icon('flame'), 'Calories, last 7 days'), h('div', { style: { marginTop: '10px' } }, body));
+  }
+
   function recentCard() {
     const dates = Object.keys(data().days).filter((d) => hasData(data().days[d])).sort().reverse().slice(0, 14);
     if (!dates.length) return null;
@@ -152,6 +176,8 @@ export function mountProgress(ctx, arg) {
         const hrs = sleepHours(day.sleep?.bed, day.sleep?.wake);
         const bits = [];
         if (hrs != null) bits.push(`${formatDuration(hrs)} sleep`);
+        const ate = eaten(data(), d);
+        if (ate?.complete) bits.push(`~${ate.kcal.toLocaleString()} kcal`);
         if (day.food?.dinner) bits.push(`dinner: ${day.food.dinner}`);
         return h('button', { class: 'list-item', type: 'button', onclick: () => navigate(d === todayISO ? '/today' : `/today/${d}`) },
           h('div', { class: 'grow' }, h('div', { class: 't' }, fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short' })), h('div', { class: 'd' }, bits.join(' · ') || ' ')),
@@ -165,7 +191,7 @@ export function mountProgress(ctx, arg) {
       statsRow(),
       h('div', { class: 'cols' },
         h('div', null, chartCard(), goalCard()),
-        h('div', null, logCard(), weekCard(), recentCard())));
+        h('div', null, logCard(), weekCard(), calorieCard(), recentCard())));
   }
   render();
   const unsub = store.subscribe(['weights', 'settings'], render);

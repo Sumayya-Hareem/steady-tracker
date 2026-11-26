@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../src/store.js';
-import { createMemoryAdapter, loadWithMigration, discardLegacy, LEGACY_KEY } from '../src/storage.js';
-import { normalize } from '../src/core/schema.js';
+import { createMemoryAdapter, loadWithMigration, discardLegacy, LEGACY_KEY, PRE_V3_KEY } from '../src/storage.js';
+import { normalize, SCHEMA_VERSION } from '../src/core/schema.js';
 
 const fakeStorage = (initial = {}) => {
   const m = new Map(Object.entries(initial));
@@ -85,7 +85,7 @@ test('snapshot is a versioned, re-importable backup', () => {
   store.updateDay('2026-10-20', (d) => (d.note = 'hello'));
   const snap = JSON.parse(JSON.stringify(store.snapshot()));
   assert.equal(snap.app, 'steady');
-  assert.equal(snap.version, 2);
+  assert.equal(snap.version, SCHEMA_VERSION);
   assert.deepEqual(normalize(snap).days['2026-10-20'], { note: 'hello' });
 });
 
@@ -97,7 +97,7 @@ test('first run after upgrade imports v1 localStorage data once and keeps the ol
   const first = await loadWithMigration(adapter, ls);
   assert.equal(first.migrated, true);
   assert.equal(first.data.settings.name, 'Sumu');
-  assert.equal(first.data.habits.find((h) => h.id === 'walk').target, 40);
+  assert.equal(first.data.habits.find((h) => h.id === 'walk').target, 4000); // 40 min → steps
   assert.equal(ls.has(LEGACY_KEY), true); // safety copy untouched
 
   const second = await loadWithMigration(adapter, ls);
@@ -122,4 +122,84 @@ test('corrupt legacy data is ignored, not fatal', async () => {
   const { data, migrated } = await loadWithMigration(createMemoryAdapter(), ls);
   assert.equal(migrated, false);
   assert.equal(data.settings.onboarded, false);
+});
+
+/* ---------- the steps update on an existing install ---------- */
+
+const D17 = '2026-10-17';
+const v2Install = () => ({
+  settings: { name: 'Sumu', onboarded: true },
+  habits: [{ id: 'walk', label: 'Evening walk', unit: 'min', target: 30, hint: '', schedule: 'daily' }],
+  days: { [D17]: { checks: { walk: true }, amounts: { walk: 35 } } },
+  weights: [{ date: '2026-10-16', kg: 70 }],
+});
+
+test('existing data is converted to steps once, with a copy of the original kept', async () => {
+  const adapter = createMemoryAdapter(v2Install());
+  const ls = fakeStorage();
+
+  const first = await loadWithMigration(adapter, ls);
+  assert.equal(first.upgraded, true);
+  assert.equal(first.data.days[D17].amounts.walk, 3500);
+  assert.equal(first.data.habits[0].unit, 'steps');
+  assert.equal(first.data.settings.name, 'Sumu');
+  assert.deepEqual(first.data.weights, [{ date: '2026-10-16', kg: 70 }]);
+
+  const kept = await adapter.meta.get(PRE_V3_KEY);
+  assert.equal(kept.data.days[D17].amounts.walk, 35); // exactly what it was before
+  assert.equal(kept.data.habits[0].unit, 'min');
+  assert.equal(await adapter.meta.get('schemaVersion'), 3);
+
+  for (let i = 0; i < 3; i++) { // every later start leaves it alone
+    const again = await loadWithMigration(adapter, ls);
+    assert.equal(again.upgraded, false);
+    assert.equal(again.data.days[D17].amounts.walk, 3500);
+    assert.equal(again.data.habits[0].target, 3000);
+  }
+});
+
+test('already-upgraded data is never converted, whatever the numbers look like', async () => {
+  const seed = v2Install();
+  seed.habits[0] = { ...seed.habits[0], unit: 'steps', target: 3000 };
+  seed.days[D17].amounts.walk = 40; // 40 steps, not 40 minutes
+  const adapter = createMemoryAdapter(seed);
+  await adapter.meta.set('schemaVersion', 3);
+  const { data, upgraded } = await loadWithMigration(adapter, fakeStorage());
+  assert.equal(upgraded, false);
+  assert.equal(data.days[D17].amounts.walk, 40);
+  assert.equal(await adapter.meta.get(PRE_V3_KEY), undefined);
+});
+
+test('a fresh install is stamped so nothing is converted later', async () => {
+  const adapter = createMemoryAdapter();
+  const ls = fakeStorage();
+  const first = await loadWithMigration(adapter, ls);
+  assert.equal(first.upgraded, false);
+  assert.equal(await adapter.meta.get('schemaVersion'), 3);
+  assert.equal(first.data.habits.find((h) => h.id === 'walk').unit, 'steps');
+
+  await adapter.putDay(D17, { amounts: { walk: 40 } });
+  await adapter.putHabits(first.data.habits);
+  const second = await loadWithMigration(adapter, ls);
+  assert.equal(second.data.days[D17].amounts.walk, 40);
+});
+
+test('if the upgrade cannot be saved it stops and leaves the original data untouched', async () => {
+  const adapter = createMemoryAdapter(v2Install());
+  adapter.replaceAll = async () => { throw new Error('disk full'); };
+  await assert.rejects(loadWithMigration(adapter, fakeStorage()), /disk full/);
+  const stored = await adapter.load();
+  assert.equal(stored.days[D17].amounts.walk, 35);
+  assert.equal(stored.habits[0].unit, 'min');
+  assert.equal(await adapter.meta.get('schemaVersion'), undefined); // so it tries again next time
+});
+
+test('restoring an old backup converts it, and the next backup is the new version', async () => {
+  const store = createStore(createMemoryAdapter(), { debounceMs: 1000 });
+  await store.replaceAll({ app: 'steady', version: 2, ...v2Install() });
+  assert.equal(store.state.days[D17].amounts.walk, 3500);
+  assert.equal(store.state.habits[0].unit, 'steps');
+  const snap = JSON.parse(JSON.stringify(store.snapshot()));
+  assert.equal(snap.version, 3);
+  assert.equal(normalize(snap).days[D17].amounts.walk, 3500); // restoring that backup again changes nothing
 });
